@@ -27,8 +27,15 @@ impl TicTacToe {
     }
 
     fn parse_moves(&mut self, moves_str: &str) -> Result<(), &'static str> {
+
+        // If moves_str is empty, there is nothing to do
+        if moves_str.is_empty() {
+            return Ok(());
+        }
+
         // Split the string into individual move components (e.g., "X-1-1" and "O-0-0")
         let moves = moves_str.split('_');
+
 
         for mv in moves {
             // Split each move into player, row, and column
@@ -302,7 +309,7 @@ async fn get_move(params: MoveParams) -> Result<impl warp::Reply, warp::Rejectio
 
     match ttt.parse_moves(&params.moves) {
         Err(err) => {
-            log::error!("parse_moves error: {}", err);
+            log::error!("parse_moves error: {} {}", err, params.moves);
             return Ok("Error:Sorry. Can't do it bro.".to_string());
         }
         Ok(_) => {
