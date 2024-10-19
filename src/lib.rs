@@ -1,7 +1,8 @@
 #![deny(warnings)]
-use warp::Filter;
 use serde::Deserialize;
+use serde_qs::from_str;
 use uuid::Uuid;
+use worker::*;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum Player {
@@ -26,7 +27,7 @@ impl TicTacToe {
         }
     }
 
-    fn parse_moves(&mut self, moves_str: &str) -> Result<(), &'static str> {
+    fn parse_moves(&mut self, moves_str: &str) -> Result<()> {
 
         // If moves_str is empty, there is nothing to do
         if moves_str.is_empty() {
@@ -42,14 +43,14 @@ impl TicTacToe {
             let parts: Vec<&str> = mv.split('-').collect();
 
             if parts.len() != 3 {
-                return Err("Invalid move format");
+                return Err("Invalid move format".into());
             }
 
             // Parse the player (X or O)
             let player = match parts[0] {
                 "X" => Player::X,
                 "O" => Player::O,
-                _ => return Err("Invalid player"),
+                _ => return Err("Invalid player".into()),
             };
 
             // Parse row and column
@@ -58,10 +59,10 @@ impl TicTacToe {
 
             // Make the move
             if row >= self.size || col >= self.size {
-                return Err("Move out of bounds");
+                return Err("Move out of bounds".into());
             }
             if self.board[row][col].is_some() {
-                return Err("Cell already taken");
+                return Err("Cell already taken".into());
             }
 
             // Place the move on the board
@@ -85,13 +86,13 @@ impl TicTacToe {
 
     // Make a move at position (row, col)
     #[allow(dead_code)]
-    fn make_move(&mut self, row: usize, col: usize) -> Result<(), &'static str> {
+    fn make_move(&mut self, row: usize, col: usize) -> Result<()> {
         if row >= self.size || col >= self.size {
-            return Err("Invalid move: Out of bounds");
+            return Err("Invalid move: Out of bounds".into());
         }
 
         if self.board[row][col].is_some() {
-            return Err("Invalid move: Cell already taken");
+            return Err("Invalid move: Cell already taken".into());
         }
 
         self.board[row][col] = Some(self.current_turn.clone());
@@ -281,6 +282,16 @@ impl TicTacToe {
 
 }
 
+
+#[derive(Deserialize, Debug)]
+struct MoveParams {
+    gid: Uuid,
+    size: u32,
+    playing: String,
+    moves: String,
+}
+
+
 // The GET /move request
 // The game server will pass the following URL query parameters to the player server.
 
@@ -294,61 +305,61 @@ impl TicTacToe {
 //     moves - A string that represents the previous moves.
 //         Moves are separated by _ and positions by -.
 //         Example: X-1-1_O-0-0 means that the X symbol was at location 1,1 (centre of grid) and O at 0,0 (top-left corner of the grid).
-#[derive(Deserialize, Debug)]
-struct MoveParams {
-    gid: Uuid,
-    size: u32,
-    playing: String,
-    moves: String,
-}
+#[event(fetch)]
+async fn fetch(
+    req: HttpRequest,
+    _env: Env,
+    _ctx: Context,
+) -> Result<Response> {
+    console_error_panic_hook::set_once();
 
-async fn get_move(params: MoveParams) -> Result<impl warp::Reply, warp::Rejection> {
-    log::info!("Received request: gid:{:?} size:{:?} playing:{:?} moves:{:?}", params.gid, params.size, params.playing, params.moves);
+    console_log!(
+        "{} {}",
+        req.method().to_string(),
+        req.uri().path(),
+    );
+
+    // Parse the request query
+    let query = req.uri().query().unwrap_or_default();
+
+    // Deserialize query string into MoveParams
+    let params: MoveParams = match from_str(query) {
+        Ok(params) => params,
+        Err(_) => {
+            return Response::error("Error:Sorry. Can't do it bro.".to_string(), 400);
+        }
+    };
+
+    console_log!("Received game: gid:{:?} size:{:?} playing:{:?} moves:{:?}", params.gid, params.size, params.playing, params.moves);
 
     let mut ttt = TicTacToe::new(params.size as usize);
 
     match ttt.parse_moves(&params.moves) {
         Err(err) => {
-            log::error!("parse_moves error: {} {}", err, params.moves);
-            return Ok("Error:Sorry. Can't do it bro.".to_string());
+            console_log!("parse_moves error: {} {}", err, params.moves);
+            return Response::ok("Error:Sorry. Can't do it bro.".to_string());
         }
         Ok(_) => {
             let player = match params.playing.as_str() {
                 "X" => Player::X,
                 "O" => Player::O,
                 _ => {
-                    log::error!("Invalid player: {}", params.playing);
-                    return Ok("Error:Sorry. Can't do it bro.".to_string());
+                    console_log!("Invalid player: {}", params.playing);
+                    return Response::ok("Error:Sorry. Can't do it bro.".to_string());
                 }
             };
 
             let (_, best_move) = ttt.minmax(0, player, i32::MIN, i32::MAX);
             
             if let Some((row, col)) = best_move {
-                log::info!("Best move: row:{:?} col:{:?}", row, col);
+                console_log!("Best move: row:{:?} col:{:?}", row, col);
                 // let res = ttt.make_move(row, col);
                 // ttt.draw_board();
-                let txt = format!("Move:{}-{}-{}", params.playing, row, col);
-                return Ok(txt);
+                return Response::ok(format!("Move:{}-{}-{}", params.playing, row, col));
             } else {
-                log::error!("No best move found");
-                return Ok("Sorry. Can't do it bro.".to_string());
+                console_log!("No best move found");
+                return Response::ok("Sorry. Can't do it bro.".to_string());
             }
-
         }
     }
-
-}
-
-#[tokio::main]
-async fn main() {
-    // Initialize the logger
-    env_logger::init();
-
-    let routes = warp::path("move")
-        .and(warp::get())
-        .and(warp::query::<MoveParams>())
-        .and_then(get_move);
-
-    warp::serve(routes).run(([127, 0, 0, 1], 3030)).await;
 }

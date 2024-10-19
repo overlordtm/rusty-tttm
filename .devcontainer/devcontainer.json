@@ -3,9 +3,10 @@
 {
 	"name": "rusty-tttm",
 	// Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
-	"image": "mcr.microsoft.com/devcontainers/rust:1-1-bullseye",
+	"image": "mcr.microsoft.com/devcontainers/rust:1-1-bookworm",
 	"features": {
-		"ghcr.io/stuartleeks/dev-container-features/shell-history:0": {}
+		"ghcr.io/stuartleeks/dev-container-features/shell-history:0": {},
+		"ghcr.io/devcontainers/features/node:1": {},
 	}
 
 	// Use 'mounts' to make the cargo cache persistent in a Docker Volume.
